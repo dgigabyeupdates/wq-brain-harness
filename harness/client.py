@@ -17,9 +17,12 @@ payload = {
         "pasteurization": "ON",
         "unitHandling": "VERIFY",
         "nanHandling": "OFF",
-        "language": "FASTEXPR"
+        "language": "FASTEXPR",
+        "visualization": False
     },
-    "code": "rank(close)"
+    "regular": {
+        "code": "rank(close)"
+    }
 }
 
 headers = {
