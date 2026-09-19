@@ -1,0 +1,4 @@
+rank(close)
+rank(volume)
+-1 * correlation(open, close, 10)
+ts_rank(returns, 20)

@@ -6,11 +6,11 @@ import csv
 
 PROXY_URL = "http://127.0.0.1:8080/simulations"
 
-ALPHA_EXPRESSIONS = [
-    "rank(close)",
-    "rank(volume)",
-    "-1 * correlation(open, close, 10)"
-]
+if os.path.exists("alphas.txt"):
+    with open("alphas.txt", "r") as f:
+        ALPHA_EXPRESSIONS = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+else:
+    ALPHA_EXPRESSIONS = ["rank(close)"]
 
 headers = {"Content-Type": "application/json"}
 results = []
@@ -41,6 +41,12 @@ for idx, expr in enumerate(ALPHA_EXPRESSIONS, 1):
     }
 
     res = requests.post(PROXY_URL, json=payload, headers=headers)
+    
+    if res.status_code == 401:
+        print("? ERROR: BRAIN_SESSION_TOKEN has expired!")
+        print("Please update the token in GitHub Secrets -> BRAIN_SESSION_TOKEN.")
+        exit(1)
+
     if res.status_code in [200, 201]:
         location = res.headers.get("Location")
         if location:
