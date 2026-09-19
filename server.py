@@ -1,77 +1,61 @@
-import time
+import os
 import requests
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import uvicorn
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
-app = FastAPI(title="WorldQuant BRAIN Local Harness Proxy")
+app = FastAPI()
 
-BRAIN_AUTH_URL = "https://api.worldquantbrain.com/authentication"
-BRAIN_SIM_URL = "https://api.worldquantbrain.com/simulations"
+BRAIN_EMAIL = os.getenv("BRAIN_EMAIL")
+BRAIN_PASSWORD = os.getenv("BRAIN_PASSWORD")
+BRAIN_SESSION_TOKEN = os.getenv("BRAIN_SESSION_TOKEN")
 
-class SimulationRequest(BaseModel):
-    email: str
-    password: str
-    code: str
-    region: str = "USA"
-    universe: str = "TOP3000"
-    decay: int = 20
-    neutralization: str = "SUBINDUSTRY"
-    truncation: float = 0.05
+session = requests.Session()
 
-@app.post("/simulate")
-def run_simulation(req: SimulationRequest):
-    session = requests.Session()
-    auth_resp = session.post(BRAIN_AUTH_URL, auth=(req.email, req.password))
-    if auth_resp.status_code not in [200, 201]:
-        raise HTTPException(status_code=401, detail=f"BRAIN Auth Failed: {auth_resp.text}")
-    
-    simulation_payload = {
-        "type": "REGULAR",
-        "settings": {
-            "instrumentType": "EQUITY",
-            "region": req.region,
-            "universe": req.universe,
-            "delay": 1,
-            "decay": req.decay,
-            "neutralization": req.neutralization,
-            "truncation": req.truncation,
-            "pasteurization": "ON",
-            "unitHandling": "VERIFY",
-            "nanHandling": "OFF",
-            "language": "FASTEXPR"
-        },
-        "code": req.code.strip()
-    }
+def init_session():
+    if BRAIN_SESSION_TOKEN:
+        session.cookies.set("t", BRAIN_SESSION_TOKEN, domain=".worldquantbrain.com")
+        return
 
-    sim_resp = session.post(BRAIN_SIM_URL, json=simulation_payload)
-    if sim_resp.status_code not in [200, 201]:
-        raise HTTPException(status_code=sim_resp.status_code, detail=f"Submission Error: {sim_resp.text}")
-    
-    progress_url = sim_resp.headers.get("Location")
-    if not progress_url:
-        raise HTTPException(status_code=500, detail="Missing Location header.")
+    if BRAIN_EMAIL and BRAIN_PASSWORD:
+        auth_url = "https://api.worldquantbrain.com/authentication"
+        res = session.post(auth_url, auth=(BRAIN_EMAIL, BRAIN_PASSWORD))
+        if res.status_code != 201:
+            raise Exception(f"BRAIN Auth Failed: {res.text}")
 
-    for _ in range(30):
-        poll_resp = session.get(progress_url)
-        if poll_resp.status_code == 200:
-            status_data = poll_resp.json()
-            if status_data.get("status") == "COMPLETE":
-                alpha_id = status_data.get("alpha")
-                alpha_resp = session.get(f"https://api.worldquantbrain.com/alphas/{alpha_id}")
-                if alpha_resp.status_code == 200:
-                    is_stats = alpha_resp.json().get("is", {})
-                    return {
-                        "status": "SUCCESS",
-                        "alpha_id": alpha_id,
-                        "sharpe": is_stats.get("sharpe", 0.0),
-                        "fitness": is_stats.get("fitness", 0.0),
-                        "turnover": is_stats.get("turnover", 0.0)
-                    }
-                return {"status": "SUCCESS", "alpha_id": alpha_id}
-        time.sleep(5)
+try:
+    init_session()
+except Exception as e:
+    print(f"Warning during session initialization: {e}")
 
-    raise HTTPException(status_code=504, detail="Polling timed out.")
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy(request: Request, path: str):
+    target_url = f"https://api.worldquantbrain.com/{path}"
+    headers = {k: v for k, v in request.headers.items() if k.lower() != "host"}
+    body = await request.body()
+
+    res = session.request(
+        method=request.method,
+        url=target_url,
+        headers=headers,
+        data=body,
+        params=request.query_params
+    )
+
+    if res.status_code == 401 and not BRAIN_SESSION_TOKEN:
+        try:
+            init_session()
+            res = session.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                data=body,
+                params=request.query_params
+            )
+        except Exception:
+            pass
+
+    return JSONResponse(status_code=res.status_code, content=res.json() if res.content else {})
 
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8080)
