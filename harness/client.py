@@ -20,9 +20,7 @@ payload = {
         "language": "FASTEXPR",
         "visualization": False
     },
-    "regular": {
-        "code": "rank(close)"
-    }
+    "regular": "rank(close)"
 }
 
 headers = {
