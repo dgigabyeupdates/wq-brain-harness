@@ -1,4 +1,4 @@
-import os
+﻿import os
 import requests
 
 EMAIL = os.getenv("BRAIN_EMAIL")
