@@ -1,34 +1,53 @@
-import os
 import requests
+import json
+import time
 
-EMAIL = os.getenv("BRAIN_EMAIL")
-PASSWORD = os.getenv("BRAIN_PASSWORD")
-HARNESS_URL = "http://127.0.0.1:8080/simulations"
-
-ALPHA_CODE = "stats=generate_stats([rank(close/open),group_rank(ts_decay_linear(returns,10),sector),ts_zscore(vwap,60),rank(vec_avg(scl12_sentiment)),rank(vec_avg(snt1_cored1_score)),rank(vec_avg(anl69_best_net_numest)),group_neutralize(ts_rank(returns,120),industry),rank(close-low),rank(high-close),ts_rank(adv20,20),rank(ts_std_dev(returns,20)),rank(cap)]); weight=1-reduce_norm(self_corr(stats.drawdown,120)); scale_down(ts_mean(weight,15))"
+PROXY_URL = "http://127.0.0.1:8080/simulations"
 
 payload = {
-    "email": EMAIL,
-    "password": PASSWORD,
-    "code": ALPHA_CODE,
-    "region": "USA",
-    "universe": "TOP3000",
-    "decay": 20,
-    "neutralization": "SUBINDUSTRY",
-    "truncation": 0.05
+    "type": "REGULAR",
+    "settings": {
+        "instrumentType": "EQUITY",
+        "region": "USA",
+        "universe": "TOP3000",
+        "delay": 1,
+        "decay": 0,
+        "neutralization": "SUBINDUSTRY",
+        "truncation": 0.08,
+        "pasteurization": "ON",
+        "unitHandling": "VERIFY",
+        "nanHandling": "OFF",
+        "language": "FASTEXPR"
+    },
+    "code": "rank(close)"
 }
 
-response = requests.post(HARNESS_URL, json=payload)
+headers = {
+    "Content-Type": "application/json"
+}
 
-if response.status_code == 200:
-    res = response.json()
-    alpha_id = res.get("alpha_id")
-    sharpe = res.get("sharpe")
-    fitness = res.get("fitness")
-    print("--- SIMULATION SUCCESSFUL ---")
-    print(f"Alpha ID: {alpha_id}")
-    print(f"Sharpe: {sharpe}")
-    print(f"Fitness: {fitness}")
+print("Sending simulation request...")
+response = requests.post(PROXY_URL, json=payload, headers=headers)
+
+if response.status_code in [200, 201]:
+    location = response.headers.get("Location")
+    print(f"Simulation started! Monitor URL: {location}")
+    
+    if location:
+        sim_progress_url = location.replace("https://api.worldquantbrain.com/", "http://127.0.0.1:8080/")
+        while True:
+            res = requests.get(sim_progress_url)
+            data = res.json()
+            status = data.get("status")
+            print(f"Status: {status}")
+            if status in ["COMPLETE", "ERROR"]:
+                print("--- SIMULATION COMPLETE ---")
+                print(json.dumps(data, indent=2))
+                break
+            time.sleep(5)
+    else:
+        print("--- SIMULATION SUCCESSFUL ---")
+        print(response.json())
 else:
     print(f"FAIL: {response.status_code} - {response.text}")
     exit(1)
