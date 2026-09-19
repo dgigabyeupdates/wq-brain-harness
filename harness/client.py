@@ -22,10 +22,13 @@ response = requests.post(HARNESS_URL, json=payload)
 
 if response.status_code == 200:
     res = response.json()
+    alpha_id = res.get("alpha_id")
+    sharpe = res.get("sharpe")
+    fitness = res.get("fitness")
     print("--- SIMULATION SUCCESSFUL ---")
-    print(f"Alpha ID: {res.get(\"alpha_id\")}")
-    print(f"Sharpe: {res.get(\"sharpe\")}")
-    print(f"Fitness: {res.get(\"fitness\")}")
+    print(f"Alpha ID: {alpha_id}")
+    print(f"Sharpe: {sharpe}")
+    print(f"Fitness: {fitness}")
 else:
     print(f"FAIL: {response.status_code} - {response.text}")
     exit(1)
