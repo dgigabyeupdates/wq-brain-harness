@@ -34,3 +34,10 @@ jobs:
           python server.py &
           sleep 3
           python harness/client.py
+
+      - name: Upload Simulation Results Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: alpha-simulation-report
+          path: simulation_results.csv

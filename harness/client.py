@@ -1,6 +1,8 @@
 import requests
 import json
 import time
+import os
+import csv
 
 PROXY_URL = "http://127.0.0.1:8080/simulations"
 
@@ -10,10 +12,7 @@ ALPHA_EXPRESSIONS = [
     "-1 * correlation(open, close, 10)"
 ]
 
-headers = {
-    "Content-Type": "application/json"
-}
-
+headers = {"Content-Type": "application/json"}
 results = []
 
 for idx, expr in enumerate(ALPHA_EXPRESSIONS, 1):
@@ -41,8 +40,6 @@ for idx, expr in enumerate(ALPHA_EXPRESSIONS, 1):
     res = requests.post(PROXY_URL, json=payload, headers=headers)
     if res.status_code in [200, 201]:
         location = res.headers.get("Location")
-        print(f"Started. Location: {location}")
-        
         if location:
             sim_url = location.replace("https://api.worldquantbrain.com/", "http://127.0.0.1:8080/")
             while True:
@@ -50,13 +47,32 @@ for idx, expr in enumerate(ALPHA_EXPRESSIONS, 1):
                 status = poll.get("status")
                 print(f"Status: {status}")
                 if status in ["COMPLETE", "ERROR"]:
-                    results.append({"alpha": expr, "status": status, "data": poll})
+                    train_metrics = poll.get("train", {})
+                    results.append({
+                        "alpha": expr,
+                        "status": status,
+                        "sharpe": train_metrics.get("sharpe", "N/A"),
+                        "fitness": train_metrics.get("fitness", "N/A"),
+                        "turnover": train_metrics.get("turnover", "N/A"),
+                        "returns": train_metrics.get("returns", "N/A")
+                    })
                     break
                 time.sleep(5)
-        else:
-            results.append({"alpha": expr, "status": "SUBMITTED", "data": res.json()})
     else:
         print(f"Failed ({res.status_code}): {res.text}")
 
-print("\n================ FINAL RESULTS SUMMARY ================")
-print(json.dumps(results, indent=2))
+with open("simulation_results.csv", "w", newline="") as f:
+    writer = csv.DictWriter(f, fieldnames=["alpha", "status", "sharpe", "fitness", "turnover", "returns"])
+    writer.writeheader()
+    writer.writerows(results)
+
+github_summary = os.getenv("GITHUB_STEP_SUMMARY")
+if github_summary:
+    with open(github_summary, "a") as f:
+        f.write("### ?? Alpha Simulation Summary Results\n\n")
+        f.write("| Alpha Expression | Status | Sharpe | Fitness | Turnover | Returns |\n")
+        f.write("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
+        for r in results:
+            f.write(f"| `{r['alpha']}` | {r['status']} | {r['sharpe']} | {r['fitness']} | {r['turnover']} | {r['returns']} |\n")
+
+print("\nSaved simulation_results.csv and updated Step Summary.")
